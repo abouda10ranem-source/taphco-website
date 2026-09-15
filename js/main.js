@@ -230,10 +230,13 @@
     });
 
     // ============================================
-    // Forms — Submission via FormSubmit.co AJAX
+    // Forms — client-side validation & UX
     // ============================================
-
-    var FORM_ENDPOINT = 'https://formsubmit.co/ajax/contact@taphco.dz';
+    //
+    // NOTE: delivery is not wired yet. When ready, replace deliverFormData()
+    // with a real backend call (Formspree, FormSubmit, API, etc.) and the
+    // rest of the form logic will work as-is.
+    // ============================================
 
     // File upload label update
     var cvInput = document.getElementById('cv');
@@ -353,67 +356,41 @@
         }
     };
 
-    // Submit payload to FormSubmit AJAX endpoint
-    var submitToBackend = function (form, subject, successMessage) {
-        var data = new FormData(form);
-        data.append('_subject', subject);
-        data.append('_template', 'table');
-        data.append('_captcha', 'false');
-
-        setLoading(form, true);
-
-        fetch(FORM_ENDPOINT, {
-            method: 'POST',
-            body: data,
-            headers: { 'Accept': 'application/json' }
-        })
-        .then(function (response) {
-            if (!response.ok) {
-                return response.json().then(function (err) {
-                    throw new Error(err && err.message ? err.message : 'Erreur serveur (' + response.status + ')');
-                }).catch(function (parseErr) {
-                    if (parseErr instanceof Error) throw parseErr;
-                    throw new Error('Erreur serveur (' + response.status + ')');
-                });
-            }
-            return response.json();
-        })
-        .then(function () {
-            setLoading(form, false);
-            showFormNotice(form, 'success', successMessage);
-        })
-        .catch(function (err) {
-            setLoading(form, false);
-            openMailFallback(form, subject);
-            showFormNotice(form, 'success',
-                'Impossible de contacter le serveur de messagerie. Votre logiciel de messagerie vient de s\u2019ouvrir avec votre message pr\u00e9-rempli — il ne vous reste qu\u2019\u00e0 l\u2019envoyer \u00e0 contact@taphco.dz.'
-            );
-            console.error('[TAPHCO form error]', err && err.message ? err.message : err);
-        });
+    // ----------------------------------------------------------------
+    // Delivery hook (currently client-side only)
+    //
+    // To add email/backend later:
+    //  1. Replace the body of deliverFormData() with a real POST call.
+    //  2. Return a Promise that resolves on success / rejects on error.
+    //  3. The forms already call handleFormResult() with the outcome.
+    // ----------------------------------------------------------------
+    var deliverFormData = function (formId, payload) {
+        console.info('[TAPHCO] Form submitted — delivery not configured yet.', payload);
+        return Promise.resolve({ ok: true });
     };
 
-    // Fallback: pre-fill the visitor's email client via a mailto: link
-    var openMailFallback = function (form, subject) {
-        var parts = [];
+    var handleFormResult = function (form, promise, successMessage) {
+        setLoading(form, true);
+
+        promise
+            .then(function () {
+                setLoading(form, false);
+                showFormNotice(form, 'success', successMessage);
+            })
+            .catch(function () {
+                setLoading(form, false);
+                showFormNotice(form, 'error',
+                    'Une erreur est survenue. Merci de réessayer ou de nous contacter à contact@taphco.dz.'
+                );
+            });
+    };
+
+    var gatherFormData = function (formId, form) {
+        var fields = [];
         form.querySelectorAll('input, textarea, select').forEach(function (field) {
-            var name = field.getAttribute('name');
-            if (!name || name.charAt(0) === '_' || name === 'cv') return;
-            var value = (field.type === 'file') ? 'fichier joint (envoyer depuis votre messagerie)' : field.value.trim();
-            if (!value) return;
-            parts.push(name + ': ' + value);
+            fields.push({ name: field.name, value: field.value.trim(), type: field.type });
         });
-
-        var body = parts.join('\n');
-        var mailto = 'mailto:contact@taphco.dz' +
-            '?subject=' + encodeURIComponent(subject) +
-            '&body=' + encodeURIComponent(body);
-
-        var a = document.createElement('a');
-        a.href = mailto;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        return { formId: formId, fields: fields, timestamp: new Date().toISOString() };
     };
 
     // Candidature form
@@ -423,16 +400,10 @@
             e.preventDefault();
             if (!validateForm(this)) return;
 
-            var civility = this.querySelector('[name="civilite"]').value;
-            var first = this.querySelector('[name="prenom"]').value;
-            var last = this.querySelector('[name="nom"]').value;
-            var subject = 'Candidature spontanée de ' + (civility + ' ' + first + ' ' + last).trim();
+            var payload = gatherFormData('candidature', this);
+            var msg = 'Candidature envoyée avec succès ! Merci de nous avoir contactés. Nous examinerons votre profil et vous recontacterons si votre profil correspond à nos besoins.';
 
-            submitToBackend(
-                this,
-                subject,
-                'Candidature envoyée avec succès ! Merci de nous avoir contactés. Nous examinerons votre profil et vous recontacterons si votre profil correspond à nos besoins.'
-            );
+            handleFormResult(this, deliverFormData('candidature', payload), msg);
         });
     }
 
@@ -443,15 +414,10 @@
             e.preventDefault();
             if (!validateForm(this)) return;
 
-            var name = this.querySelector('[name="nom"]').value;
-            var topic = this.querySelector('[name="sujet"]').value;
-            var subject = topic ? (topic + ' — de ' + name) : ('Message depuis le site — ' + name);
+            var payload = gatherFormData('contact', this);
+            var msg = 'Message envoyé avec succès ! Notre équipe vous répondra dans les plus brefs délais.';
 
-            submitToBackend(
-                this,
-                subject,
-                'Message envoyé avec succès ! Notre équipe vous répondra dans les plus brefs délais.'
-            );
+            handleFormResult(this, deliverFormData('contact', payload), msg);
         });
     }
 
