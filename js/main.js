@@ -230,14 +230,16 @@
     });
 
     // ============================================
-    // Forms
+    // Forms — Submission via FormSubmit.co AJAX
     // ============================================
 
+    var FORM_ENDPOINT = 'https://formsubmit.co/ajax/contact@taphco.dz';
+
     // File upload label update
-    const cvInput = document.getElementById('cv');
+    var cvInput = document.getElementById('cv');
     if (cvInput) {
         cvInput.addEventListener('change', function () {
-            const label = document.querySelector('.file-label span');
+            var label = document.querySelector('.file-label span');
             if (this.files && this.files[0]) {
                 label.textContent = this.files[0].name;
             } else {
@@ -246,95 +248,218 @@
         });
     }
 
+    // Validation helpers
+    var validators = {
+        email: function (value) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
+        },
+        phone: function (value) {
+            return value === '' || /^[\d\s()+\-.]{8,20}$/.test(value);
+        }
+    };
+
+    var getFieldError = function (input) {
+        if (!input.value.trim()) {
+            return 'Ce champ est obligatoire';
+        }
+        if (input.type === 'email' && !validators.email(input.value.trim())) {
+            return 'Adresse email invalide';
+        }
+        if ((input.type === 'tel' || input.name === 'telephone') && !validators.phone(input.value.trim())) {
+            return 'Numéro de téléphone invalide';
+        }
+        if (input.type === 'file' && !input.files.length) {
+            return 'Veuillez choisir un fichier';
+        }
+        if (input.type === 'file' && input.files[0]) {
+            var file = input.files[0];
+            var validExt = /\.(pdf|doc|docx)$/i.test(file.name);
+            var maxSize = 10 * 1024 * 1024;
+            if (!validExt) return 'Le CV doit être au format Word ou PDF';
+            if (file.size > maxSize) return 'Le fichier ne doit pas dépasser 10 Mo';
+        }
+        return '';
+    };
+
+    var flashFieldError = function (input) {
+        var message = getFieldError(input);
+        var container = input.closest('.form-group');
+        var existing = container ? container.querySelector('.field-error') : null;
+        if (existing) existing.remove();
+        if (message) {
+            input.style.borderColor = 'var(--color-danger, #ff4444)';
+            if (container) {
+                var tip = document.createElement('small');
+                tip.className = 'field-error';
+                tip.textContent = message;
+                container.appendChild(tip);
+            }
+        } else {
+            input.style.borderColor = '';
+        }
+        return message === '';
+    };
+
+    var validateForm = function (form) {
+        var required = form.querySelectorAll('[required]');
+        var valid = true;
+        required.forEach(function (input) {
+            if (!flashFieldError(input)) valid = false;
+        });
+        return valid;
+    };
+
+    var findFormGroup = function (input) {
+        var group = input.closest('.form-group');
+        if (group) {
+            var errorTip = group.querySelector('.field-error');
+            if (errorTip) errorTip.remove();
+            input.style.borderColor = '';
+        }
+    };
+
+    // Visual feedback (success / error banner)
+    var showFormNotice = function (form, type, message) {
+        var existing = form.querySelector('.form-notice');
+        if (existing) existing.remove();
+
+        var notice = document.createElement('div');
+        notice.className = 'form-notice ' + type;
+        notice.setAttribute('role', type === 'success' ? 'status' : 'alert');
+        notice.innerHTML =
+            '<i class="' + (type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle') + '"></i>' +
+            '<span>' + message + '</span>';
+        form.prepend(notice);
+
+        if (type === 'success') {
+            form.reset();
+            document.querySelectorAll('.file-label span').forEach(function (span) {
+                span.textContent = 'Choisir un fichier';
+            });
+        }
+    };
+
+    var setLoading = function (form, loading) {
+        var btn = form.querySelector('.btn-submit');
+        if (!btn) return;
+        btn.disabled = loading;
+        btn.classList.toggle('btn-loading', loading);
+        if (loading) {
+            btn.dataset.originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Envoi en cours…';
+        } else if (btn.dataset.originalHtml) {
+            btn.innerHTML = btn.dataset.originalHtml;
+            delete btn.dataset.originalHtml;
+        }
+    };
+
+    // Submit payload to FormSubmit AJAX endpoint
+    var submitToBackend = function (form, subject, successMessage) {
+        var data = new FormData(form);
+        data.append('_subject', subject);
+        data.append('_template', 'table');
+        data.append('_captcha', 'false');
+
+        setLoading(form, true);
+
+        fetch(FORM_ENDPOINT, {
+            method: 'POST',
+            body: data,
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(function (response) {
+            if (!response.ok) {
+                return response.json().then(function (err) {
+                    throw new Error(err && err.message ? err.message : 'Erreur serveur (' + response.status + ')');
+                }).catch(function (parseErr) {
+                    if (parseErr instanceof Error) throw parseErr;
+                    throw new Error('Erreur serveur (' + response.status + ')');
+                });
+            }
+            return response.json();
+        })
+        .then(function () {
+            setLoading(form, false);
+            showFormNotice(form, 'success', successMessage);
+        })
+        .catch(function (err) {
+            setLoading(form, false);
+            openMailFallback(form, subject);
+            showFormNotice(form, 'success',
+                'Impossible de contacter le serveur de messagerie. Votre logiciel de messagerie vient de s\u2019ouvrir avec votre message pr\u00e9-rempli — il ne vous reste qu\u2019\u00e0 l\u2019envoyer \u00e0 contact@taphco.dz.'
+            );
+            console.error('[TAPHCO form error]', err && err.message ? err.message : err);
+        });
+    };
+
+    // Fallback: pre-fill the visitor's email client via a mailto: link
+    var openMailFallback = function (form, subject) {
+        var parts = [];
+        form.querySelectorAll('input, textarea, select').forEach(function (field) {
+            var name = field.getAttribute('name');
+            if (!name || name.charAt(0) === '_' || name === 'cv') return;
+            var value = (field.type === 'file') ? 'fichier joint (envoyer depuis votre messagerie)' : field.value.trim();
+            if (!value) return;
+            parts.push(name + ': ' + value);
+        });
+
+        var body = parts.join('\n');
+        var mailto = 'mailto:contact@taphco.dz' +
+            '?subject=' + encodeURIComponent(subject) +
+            '&body=' + encodeURIComponent(body);
+
+        var a = document.createElement('a');
+        a.href = mailto;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
+
     // Candidature form
-    const candidatureForm = document.getElementById('candidatureForm');
+    var candidatureForm = document.getElementById('candidatureForm');
     if (candidatureForm) {
         candidatureForm.addEventListener('submit', function (e) {
             e.preventDefault();
+            if (!validateForm(this)) return;
 
-            const inputs = this.querySelectorAll('input[required], select[required]');
-            let valid = true;
+            var civility = this.querySelector('[name="civilite"]').value;
+            var first = this.querySelector('[name="prenom"]').value;
+            var last = this.querySelector('[name="nom"]').value;
+            var subject = 'Candidature spontanée de ' + (civility + ' ' + first + ' ' + last).trim();
 
-            inputs.forEach(function (input) {
-                if (!input.value.trim()) {
-                    input.style.borderColor = '#ff4444';
-                    valid = false;
-                } else {
-                    input.style.borderColor = '';
-                }
-            });
-
-            if (valid) {
-                showSuccess(this, 'Candidature envoyée avec succès ! Merci de nous avoir contactés. Nous examinerons votre profil et vous recontacterons si votre profil correspond à nos besoins.');
-            }
+            submitToBackend(
+                this,
+                subject,
+                'Candidature envoyée avec succès ! Merci de nous avoir contactés. Nous examinerons votre profil et vous recontacterons si votre profil correspond à nos besoins.'
+            );
         });
     }
 
     // Contact form
-    const contactForm = document.getElementById('contactForm');
+    var contactForm = document.getElementById('contactForm');
     if (contactForm) {
         contactForm.addEventListener('submit', function (e) {
             e.preventDefault();
+            if (!validateForm(this)) return;
 
-            const inputs = this.querySelectorAll('input[required], textarea[required]');
-            let valid = true;
+            var name = this.querySelector('[name="nom"]').value;
+            var topic = this.querySelector('[name="sujet"]').value;
+            var subject = topic ? (topic + ' — de ' + name) : ('Message depuis le site — ' + name);
 
-            inputs.forEach(function (input) {
-                if (!input.value.trim()) {
-                    input.style.borderColor = '#ff4444';
-                    valid = false;
-                } else {
-                    input.style.borderColor = '';
-                }
-            });
-
-            if (valid) {
-                showSuccess(this, 'Message envoyé avec succès ! Notre équipe vous répondra dans les plus brefs délais.');
-            }
+            submitToBackend(
+                this,
+                subject,
+                'Message envoyé avec succès ! Notre équipe vous répondra dans les plus brefs délais.'
+            );
         });
     }
 
     // Input validation feedback - clear error on input
     document.querySelectorAll('input, textarea, select').forEach(function (field) {
-        field.addEventListener('input', function () {
-            if (this.value.trim()) {
-                this.style.borderColor = '';
-            }
-        });
+        field.addEventListener('input', function () { findFormGroup(this); });
+        field.addEventListener('change', function () { findFormGroup(this); });
     });
-
-    // ============================================
-    // Success Notification
-    // ============================================
-    const showSuccess = function (form, message) {
-        const existing = form.querySelector('.form-success');
-        if (existing) {
-            existing.remove();
-        }
-
-        const success = document.createElement('div');
-        success.className = 'form-success';
-        success.innerHTML =
-            '<div style="background: rgba(0,166,81,0.12); border: 1px solid var(--color-primary); color: var(--color-primary-light); padding: 18px 24px; border-radius: 12px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; font-size: 0.95rem;">' +
-            '<i class="fas fa-check-circle" style="font-size: 1.3rem; flex-shrink: 0;"></i>' +
-            '<span>' + message + '</span></div>';
-
-        form.prepend(success);
-        form.reset();
-
-        document.querySelectorAll('.file-label span').forEach(function (span) {
-            span.textContent = 'Choisir un fichier';
-        });
-
-        setTimeout(function () {
-            success.style.transition = 'opacity 0.5s, transform 0.5s';
-            success.style.opacity = '0';
-            success.style.transform = 'translateY(-10px)';
-            setTimeout(function () {
-                success.remove();
-            }, 500);
-        }, 5000);
-    };
 
     // ============================================
     // Parallax effect on engagement icons
