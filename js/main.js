@@ -356,16 +356,24 @@
         }
     };
 
+    // ================================================================
+    // SERVICE : Envoi des formulaires (Contact & Candidature)
     // ----------------------------------------------------------------
-    // Delivery hook (currently client-side only)
+    // ÉTAT : NON CONFIGURÉ — placeholder. Ne renvoie POUR L'INSTANT un
+    // succès local pour que l'UI reste testable.
     //
-    // To add email/backend later:
-    //  1. Replace the body of deliverFormData() with a real POST call.
-    //  2. Return a Promise that resolves on success / rejects on error.
-    //  3. The forms already call handleFormResult() with the outcome.
-    // ----------------------------------------------------------------
+    // CE QUI EST NÉCESSAIRE :
+    //   1. Un service d'envoi (Formspree / FormSubmit / backend maison)
+    //   2. L'adresse email réceptrice de TAPHCO
+    //   3. L'endpoint API du service choisi
+    //
+    // Pour activer : remplacer le corps de deliverFormData() par un
+    // vrai appel POST (voir handleFormResult ci-dessous), puis
+    // configurer la recepIndirection selon le service.
+    // ================================================================
     var deliverFormData = function (formId, payload) {
-        console.info('[TAPHCO] Form submitted — delivery not configured yet.', payload);
+        console.info('[TAPHCO] SERVICE NÉCESSAIRE : envoi du formulaire « ' + formId +
+            ' » vers l\u2019email de TAPHCO — NON CONFIGURÉ (voir commentaire dans js/main.js).', payload);
         return Promise.resolve({ ok: true });
     };
 

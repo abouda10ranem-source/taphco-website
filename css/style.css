@@ -322,7 +322,8 @@ h1, h2, h3, h4, h5, h6 {
     visibility: hidden;
     transition: opacity 1s ease;
     background-size: cover;
-    background-position: center;
+    background-position: center center;
+    background-repeat: no-repeat;
 }
 
 .hero-slide.active {
@@ -2341,6 +2342,12 @@ h1, h2, h3, h4, h5, h6 {
     .hero {
         height: auto;
         min-height: 100vh;
+    }
+
+    .hero-slide {
+        background-size: cover;
+        background-position: center center;
+        background-repeat: no-repeat;
     }
 
     .slide-content {
