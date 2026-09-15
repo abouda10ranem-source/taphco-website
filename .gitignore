@@ -1,0 +1,14 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Server lock files
+*.pid
+
+# Editor dirs
+.idea/
+.vscode/
+*.swp
